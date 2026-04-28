@@ -1,0 +1,20 @@
+# Python / UV
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Datasets — too large for GitHub (>100MB hard limit)
+datasets/*
+!datasets/.gitinclude
+
+# OS
+.DS_Store
+Thumbs.db
