@@ -1,6 +1,7 @@
 # Python / UV
 .venv/
 venv/
+ust_dsa_workshop/
 __pycache__/
 *.pyc
 *.pyo
