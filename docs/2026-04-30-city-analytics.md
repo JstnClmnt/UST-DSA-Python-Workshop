@@ -105,6 +105,23 @@ Row 4: Two columns
 Row 5: "Generate City Insights" button -> Claude API call -> st.info()
 ```
 
+## Claude Code Live Demo Prompt (Segment 4)
+
+On the `workshop` branch (no `app.py`), use this prompt to kick off Claude Code in plan mode:
+
+```
+I have a Jupyter notebook that builds a churn prediction model for an e-commerce
+business. Convert it into a Streamlit app that lets me look up customers, see their
+churn risk, and get AI recommendations using Claude.
+```
+
+**Expected flow:**
+1. Claude Code reads the notebook and database to understand the schema and model
+2. It enters plan mode and proposes an implementation plan
+3. Presenter reviews and approves the plan
+4. Claude Code generates `app.py`
+5. Run `streamlit run app.py` live
+
 ## Verification
 
 1. Run `streamlit run app.py`
