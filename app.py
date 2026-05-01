@@ -17,12 +17,13 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model():
-    return joblib.load("models/churn_model.pkl")
+    artifact = joblib.load("models/churn_model.pkl")
+    return artifact["model"], artifact["feature_columns"], artifact["impute_medians"]
 
 
 @st.cache_resource
 def get_db():
-    return sqlite3.connect("data/ecommerce_ph.db", check_same_thread=False)
+    return sqlite3.connect("data/ecommerce_churn.db", check_same_thread=False)
 
 
 def get_customer_ids(conn):
@@ -30,34 +31,52 @@ def get_customer_ids(conn):
     return pd.read_sql(query, conn)
 
 
-def get_customer_features(conn, customer_id):
+def get_customer_profile(conn, customer_id):
+    query = "SELECT * FROM customers WHERE customer_id = ?"
+    return pd.read_sql(query, conn, params=[customer_id])
+
+
+def get_customer_orders(conn, customer_id):
     query = """
-    SELECT
-        customer_id,
-        COUNT(*) AS total_orders,
-        AVG(total_amount) AS avg_order_value,
-        MIN(days_since_last_order) AS days_since_last_order,
-        SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS cancellation_rate
-    FROM orders
-    WHERE customer_id = ?
-    GROUP BY customer_id
+    SELECT order_date, total_amount, status, payment_type, review_score
+    FROM orders WHERE customer_id = ? ORDER BY order_date DESC
     """
     return pd.read_sql(query, conn, params=[customer_id])
 
 
-def get_customer_profile(conn, customer_id):
-    query = "SELECT * FROM customers WHERE customer_id = ?"
-    return pd.read_sql(query, conn, params=[customer_id])
+def build_feature_vector(profile_row, feature_columns):
+    row_data = {
+        "Tenure": profile_row["tenure_months"],
+        "WarehouseToHome": profile_row["warehouse_to_home"],
+        "NumberOfDeviceRegistered": profile_row["num_devices"],
+        "SatisfactionScore": profile_row["satisfaction_score"],
+        "NumberOfAddress": profile_row["num_addresses"],
+        "Complain": profile_row["complain"],
+        "DaySinceLastOrder": profile_row["days_since_last_order"],
+        "CashbackAmount": profile_row["cashback_amount"],
+        "PreferedOrderCat": profile_row["preferred_category"],
+        "MaritalStatus": profile_row["marital_status"],
+    }
+    df = pd.DataFrame([row_data])
+    df = pd.get_dummies(df, columns=["PreferedOrderCat", "MaritalStatus"], drop_first=True)
+    df = df.reindex(columns=feature_columns, fill_value=0)
+    return df
 
 
 def explain_churn_risk(customer_data: dict, risk_score: float) -> str:
     client = anthropic.Anthropic()
     prompt = f"""A customer has a {risk_score:.0%} churn risk score.
 Their profile:
-- Days since last order: {customer_data['days_since_last_order']}
-- Total orders: {customer_data['total_orders']}
-- Avg order value: ₱{customer_data['avg_order_value']:,.2f}
-- Cancellation rate: {customer_data['cancellation_rate']:.0%}
+- Tenure: {customer_data['tenure_months']} months
+- Satisfaction Score: {customer_data['satisfaction_score']}/5
+- Preferred Category: {customer_data['preferred_category']}
+- Marital Status: {customer_data['marital_status']}
+- Days Since Last Order: {customer_data['days_since_last_order']}
+- Cashback Amount: ₱{customer_data['cashback_amount']:,.2f}
+- Filed Complaint: {'Yes' if customer_data['complain'] else 'No'}
+- Devices Registered: {customer_data['num_devices']}
+- Addresses on File: {customer_data['num_addresses']}
+- Warehouse Distance: {customer_data['warehouse_to_home']} km
 
 Write a brief, actionable recommendation for the business owner.
 Be concise and specific. 2-3 sentences max."""
@@ -78,10 +97,9 @@ def get_city_metrics(conn):
         COUNT(o.order_id) AS total_orders,
         ROUND(SUM(o.total_amount), 2) AS total_revenue,
         ROUND(AVG(o.total_amount), 2) AS avg_order_value,
-        SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_orders,
-        ROUND(SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END) * 100.0 / COUNT(o.order_id), 2) AS cancellation_rate
+        ROUND(AVG(c.satisfaction_score), 1) AS avg_satisfaction
     FROM customers c
-    JOIN orders o ON c.customer_id = o.customer_id
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
     GROUP BY c.city
     ORDER BY c.city
     """
@@ -91,17 +109,12 @@ def get_city_metrics(conn):
 def get_city_churn_rates(conn):
     query = """
     SELECT
-        c.city,
+        city,
         COUNT(*) AS total_customers,
-        SUM(CASE WHEN o.days_since_last_order > 90 THEN 1 ELSE 0 END) AS churned_customers,
-        ROUND(SUM(CASE WHEN o.days_since_last_order > 90 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS churn_rate
-    FROM customers c
-    JOIN (
-        SELECT customer_id, MIN(days_since_last_order) AS days_since_last_order
-        FROM orders
-        GROUP BY customer_id
-    ) o ON c.customer_id = o.customer_id
-    GROUP BY c.city
+        SUM(churn) AS churned_customers,
+        ROUND(SUM(churn) * 100.0 / COUNT(*), 1) AS churn_rate
+    FROM customers
+    GROUP BY city
     ORDER BY churn_rate DESC
     """
     return pd.read_sql(query, conn)
@@ -132,7 +145,7 @@ Be concise and specific. 4-5 sentences max."""
 st.title("📊 Customer Churn Predictor")
 st.markdown("AI-powered churn risk assessment — by customer or by city.")
 
-model = load_model()
+model, feature_columns, impute_medians = load_model()
 conn = get_db()
 
 tab1, tab2 = st.tabs(["Customer Lookup", "City Analytics"])
@@ -152,58 +165,73 @@ with tab1:
 
     if selected_id:
         profile = get_customer_profile(conn, selected_id)
-        features = get_customer_features(conn, selected_id)
+        row = profile.iloc[0]
 
-        if features.empty:
-            st.warning("No orders found for this customer.")
+        features = build_feature_vector(row, feature_columns)
+        risk_score = model.predict_proba(features)[0][1]
+
+        st.subheader(row["name"])
+        col1, col2, col3 = st.columns(3)
+        col1.metric("City", row["city"])
+        col2.metric("Member Since", row["signup_date"])
+        col3.metric("Tenure", f"{row['tenure_months']} months")
+
+        st.divider()
+
+        risk_pct = risk_score * 100
+        if risk_pct >= 70:
+            risk_color = "🔴"
+            risk_label = "High Risk"
+        elif risk_pct >= 40:
+            risk_color = "🟡"
+            risk_label = "Medium Risk"
         else:
-            row = features.iloc[0]
-            feature_values = row[["days_since_last_order", "total_orders",
-                                  "avg_order_value", "cancellation_rate"]]
-            risk_score = model.predict_proba(feature_values.values.reshape(1, -1))[0][1]
+            risk_color = "🟢"
+            risk_label = "Low Risk"
 
-            st.subheader(profile.iloc[0]["name"])
-            col1, col2, col3 = st.columns(3)
-            col1.metric("City", profile.iloc[0]["city"])
-            col2.metric("Member Since", profile.iloc[0]["signup_date"])
-            col3.metric("Total Orders", int(row["total_orders"]))
+        st.subheader(f"{risk_color} Churn Risk: {risk_pct:.1f}%")
+        st.caption(risk_label)
+        st.progress(min(risk_score, 1.0))
 
-            st.divider()
+        st.divider()
+        st.subheader("Customer Metrics")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Satisfaction", f"{row['satisfaction_score']}/5")
+        c2.metric("Days Since Order", int(row["days_since_last_order"]))
+        c3.metric("Cashback", f"₱{row['cashback_amount']:,.2f}")
+        c4.metric("Complaint", "Yes" if row["complain"] else "No")
+        c5.metric("Devices", int(row["num_devices"]))
 
-            risk_pct = risk_score * 100
-            if risk_pct >= 70:
-                risk_color = "🔴"
-                risk_label = "High Risk"
-            elif risk_pct >= 40:
-                risk_color = "🟡"
-                risk_label = "Medium Risk"
+        c6, c7, c8, c9 = st.columns(4)
+        c6.metric("Preferred Category", row["preferred_category"])
+        c7.metric("Marital Status", row["marital_status"])
+        c8.metric("Addresses", int(row["num_addresses"]))
+        c9.metric("Warehouse Distance", f"{row['warehouse_to_home']} km")
+
+        with st.expander("Order History"):
+            orders = get_customer_orders(conn, selected_id)
+            if orders.empty:
+                st.info("No orders found.")
             else:
-                risk_color = "🟢"
-                risk_label = "Low Risk"
+                st.dataframe(orders, use_container_width=True)
 
-            st.subheader(f"{risk_color} Churn Risk: {risk_pct:.1f}%")
-            st.caption(risk_label)
-            st.progress(min(risk_score, 1.0))
-
-            st.divider()
-            st.subheader("Customer Metrics")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Days Since Last Order", int(row["days_since_last_order"]))
-            c2.metric("Total Orders", int(row["total_orders"]))
-            c3.metric("Avg Order Value", f"₱{row['avg_order_value']:,.2f}")
-            c4.metric("Cancellation Rate", f"{row['cancellation_rate']:.0%}")
-
-            st.divider()
-            st.subheader("🤖 AI Recommendation")
-            with st.spinner("Generating recommendation..."):
-                customer_data = {
-                    "days_since_last_order": int(row["days_since_last_order"]),
-                    "total_orders": int(row["total_orders"]),
-                    "avg_order_value": float(row["avg_order_value"]),
-                    "cancellation_rate": float(row["cancellation_rate"]),
-                }
-                explanation = explain_churn_risk(customer_data, risk_score)
-            st.info(explanation)
+        st.divider()
+        st.subheader("🤖 AI Recommendation")
+        with st.spinner("Generating recommendation..."):
+            customer_data = {
+                "tenure_months": int(row["tenure_months"]),
+                "satisfaction_score": int(row["satisfaction_score"]),
+                "preferred_category": row["preferred_category"],
+                "marital_status": row["marital_status"],
+                "days_since_last_order": int(row["days_since_last_order"]),
+                "cashback_amount": float(row["cashback_amount"]),
+                "complain": int(row["complain"]),
+                "num_devices": int(row["num_devices"]),
+                "num_addresses": int(row["num_addresses"]),
+                "warehouse_to_home": int(row["warehouse_to_home"]),
+            }
+            explanation = explain_churn_risk(customer_data, risk_score)
+        st.info(explanation)
 
 with tab2:
     metrics_df = get_city_metrics(conn)
@@ -228,14 +256,14 @@ with tab2:
         st.subheader("Avg Order Value by City (₱)")
         st.bar_chart(metrics_df.set_index("city")["avg_order_value"])
     with col_right:
-        st.subheader("Cancellation Rate by City (%)")
-        st.bar_chart(metrics_df.set_index("city")["cancellation_rate"])
+        st.subheader("Avg Satisfaction by City")
+        st.bar_chart(metrics_df.set_index("city")["avg_satisfaction"])
 
     st.divider()
     st.subheader("🤖 AI City Insights")
     if st.button("Generate City Insights"):
         with st.spinner("Analyzing city data..."):
             merged = churn_df.merge(metrics_df, on="city")
-            summary = merged[["city", "churn_rate", "total_revenue", "avg_order_value", "cancellation_rate"]].to_string(index=False)
+            summary = merged[["city", "churn_rate", "total_revenue", "avg_order_value", "avg_satisfaction"]].to_string(index=False)
             insights = explain_city_insights(summary)
         st.info(insights)
