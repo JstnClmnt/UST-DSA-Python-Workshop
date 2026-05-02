@@ -32,7 +32,8 @@ Old files (`build_ph_db.py`, `ecommerce_ph.db`) are kept for reference, not dele
 ## 1. Build Script — `scripts/build_churn_db.py`
 
 ### Input
-- `datasets/data_ecommerce_customer_churn.csv` (3,941 rows)
+- `datasets/data_ecommerce_customer_churn.csv` (3,941 rows — ML features + churn labels)
+- `datasets/customer_profiles.csv` (3,941 rows — synthesized Filipino names & PH cities)
 
 ### Output
 - `data/ecommerce_churn.db` (SQLite, 2 tables)
@@ -82,13 +83,15 @@ CREATE INDEX idx_orders_customer ON orders(customer_id);
 | WarehouseToHome | 169 | Median (14.0) |
 | DaySinceLastOrder | 213 | Median (3.0) |
 
-### Customer Identity Synthesis
+### Customer Identity
+
+Name and city come from `datasets/customer_profiles.csv` (pre-generated, checked into git).
 
 | Field | Derivation |
 |-------|------------|
 | `customer_id` | `sha256(f"kaggle-churn-{row_index}")[:32]` |
-| `name` | Filipino name via `_seed_from_id(customer_id)` — reuse `FIRST_NAMES` (50) and `LAST_NAMES` (40) from `build_ph_db.py` |
-| `city` | Random from `PH_CITIES` (24), seeded with `random.Random(42)` |
+| `name` | Read from `customer_profiles.csv` |
+| `city` | Read from `customer_profiles.csv` |
 | `signup_date` | `REFERENCE_DATE - timedelta(days=Tenure * 30)` where `REFERENCE_DATE = 2025-03-01` |
 
 ### Order History Synthesis
@@ -125,11 +128,9 @@ For each customer, generate orders consistent with their Kaggle features:
 - Credit Card: 74%, Boleto: 19%, Voucher: 5.6%, Debit Card: 1.5%
 
 ### Reuse from `build_ph_db.py`
-- `PH_CITIES` list (24 cities)
-- `FIRST_NAMES` list (50 names)
-- `LAST_NAMES` list (40 names)
 - `_seed_from_id()` function
 - Overall script structure (constants → build functions → main → verify)
+- Name/city lists moved to `customer_profiles.csv` (no longer inline in the build script)
 
 ---
 
@@ -154,51 +155,45 @@ Reads `datasets/data_ecommerce_customer_churn.csv` directly (NOT from the SQLite
 1. Impute nulls with median (Tenure, WarehouseToHome, DaySinceLastOrder)
 2. One-hot encode categoricals with `pd.get_dummies(drop_first=True)`
 3. Train/test split: 80/20, stratified, `random_state=42`
+4. `StandardScaler` fitted on training set only (for MLP and SVM; RF uses unscaled data)
 
-### Hyperparameter Tuning — GridSearchCV
+### Three Models — GridSearchCV with F2 Scoring
 
-```python
-param_grid = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [None, 10, 20, 30],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
-}
+All models use `scoring=make_scorer(fbeta_score, beta=2)` — F2 weighs recall 4× more than precision, appropriate for churn where missing a churner is costlier than a false alarm.
 
-grid_search = GridSearchCV(
-    RandomForestClassifier(random_state=42, n_jobs=-1),
-    param_grid,
-    cv=5,
-    scoring='f1',
-    n_jobs=-1,
-    verbose=1,
-)
-grid_search.fit(X_train, y_train)
-best_model = grid_search.best_estimator_
-```
+**Random Forest** (108 candidates × 5 folds = 540 fits, unscaled data):
+- `n_estimators`: [100, 200, 300], `max_depth`: [None, 10, 20, 30], `min_samples_split`: [2, 5, 10], `min_samples_leaf`: [1, 2, 4]
 
-Scoring on `f1` rather than accuracy because of class imbalance (17% churn).
+**MLP Neural Network** (36 candidates × 5 folds = 180 fits, scaled data):
+- `hidden_layer_sizes`: [(64,32), (128,64), (100,)], `activation`: [relu, tanh], `alpha`: [0.0001, 0.001, 0.01], `learning_rate`: [constant, adaptive]
+- `max_iter=500`, `early_stopping=True`
 
-### Evaluation
-- Best params display
-- Classification report (precision, recall, F1 for both classes)
-- Confusion matrix heatmap
-- Feature importances bar chart (expect spread across features)
-- Cross-validation scores
+**SVM** (12 candidates × 5 folds = 60 fits, scaled data):
+- `C`: [0.1, 1, 10], `kernel`: [rbf, linear], `gamma`: [scale, auto]
+- `probability=True` for `predict_proba`
+
+### Evaluation & Comparison
+- Classification report per model
+- ROC curves overlay (all 3 models + AUC in legend)
+- Bar chart comparing Accuracy, F1, F2, Precision, Recall
+- Side-by-side confusion matrices (1×3 subplot)
+- SHAP feature importance bar chart (all 3 models) + beeswarm plot for winner
 
 ### Model Artifact
 
-Save as a dict so the app can reproduce the same feature transformation:
+Best model selected by highest F2 on test set. Saved as a dict:
 
 ```python
 artifact = {
     'model': best_model,
-    'feature_columns': list(X_train.columns),
+    'feature_columns': list(X.columns),
     'impute_medians': {
         'Tenure': df['Tenure'].median(),
         'WarehouseToHome': df['WarehouseToHome'].median(),
         'DaySinceLastOrder': df['DaySinceLastOrder'].median(),
     },
+    'scaler': fitted_scaler_or_None,  # None if RF wins
+    'model_name': 'Random Forest' | 'MLP' | 'SVM',
 }
 joblib.dump(artifact, '../models/churn_model.pkl')
 ```
@@ -211,7 +206,7 @@ joblib.dump(artifact, '../models/churn_model.pkl')
 
 **DB connection:** `data/ecommerce_churn.db`
 
-**Model loading:** Unpack artifact dict → `model`, `feature_columns`, `impute_medians`
+**Model loading:** Unpack artifact dict → `model`, `feature_columns`, `impute_medians`, `scaler`, `model_name`
 
 **Customer features:** Read directly from `customers` table (no SQL aggregation from orders):
 ```sql
@@ -247,11 +242,13 @@ FROM orders WHERE customer_id = ? ORDER BY order_date DESC
 
 | File | Action |
 |------|--------|
-| `scripts/build_churn_db.py` | CREATE (~250 lines) |
+| `scripts/build_churn_db.py` | CREATE (~200 lines, reads profiles CSV) |
+| `datasets/customer_profiles.csv` | CREATE (3,941 rows — name, city) |
 | `data/ecommerce_churn.db` | CREATE (generated by script) |
-| `notebooks/01_churn_model.ipynb` | REWRITE |
-| `models/churn_model.pkl` | REPLACE (generated by notebook) |
-| `app.py` | REWRITE |
+| `notebooks/01_churn_model.ipynb` | REWRITE (3 models, SHAP, F2 scoring) |
+| `models/churn_model.pkl` | REPLACE (new artifact with scaler + model_name) |
+| `app.py` | REWRITE (scaler support, sidebar model info) |
+| `requirements.txt` | UPDATE (added shap) |
 | `scripts/build_ph_db.py` | Keep (reference) |
 | `data/ecommerce_ph.db` | Keep (reference) |
 
@@ -269,13 +266,18 @@ FROM orders WHERE customer_id = ? ORDER BY order_date DESC
 ### Notebook
 - Model accuracy is NOT 100% (leakage is gone)
 - No single feature has > 50% importance
-- GridSearchCV best params are displayed
-- `churn_model.pkl` saved with feature config
+- All 3 models (RF, MLP, SVM) train and evaluate
+- F2 scoring used for GridSearchCV and best-model selection
+- SHAP visualizations render for all 3 models
+- ROC curves, metrics bar chart, confusion matrices all display
+- `churn_model.pkl` saved with scaler + model_name in artifact
 
 ### App
 - `streamlit run app.py` starts without errors
+- Sidebar shows winning model name and scaling status
 - Customer dropdown shows Filipino names
 - 10 feature metrics displayed (not old 4)
+- Scaler applied before prediction when model requires it
 - Churn risk is a realistic probability
 - Claude recommendation references new features
 - City analytics uses ground truth churn column
