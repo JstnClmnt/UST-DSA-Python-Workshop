@@ -1,10 +1,10 @@
 """
 Build a PH-localized SQLite database from the Kaggle e-commerce churn dataset.
 
-Reads:  datasets/data_ecommerce_customer_churn.csv  (3,941 rows with proper churn labels)
-Writes: data/ecommerce_churn.db  (customers + orders tables)
+Reads:  datasets/data_ecommerce_customer_churn.csv  (3,941 rows — ML features + churn labels)
+        datasets/customer_profiles.csv              (3,941 rows — synthesized Filipino names & PH cities)
+Writes: data/ecommerce_churn.db                     (customers + orders tables)
 
-Customer identity (Filipino names, PH cities) is synthesized.
 Order history is synthesized to be consistent with each customer's Kaggle features.
 Olist distributions are used for realistic status/payment/review sampling.
 """
@@ -13,7 +13,6 @@ import hashlib
 import math
 import random
 import sqlite3
-import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -21,38 +20,10 @@ import numpy as np
 import pandas as pd
 
 KAGGLE_CSV = Path(__file__).resolve().parent.parent / "datasets" / "data_ecommerce_customer_churn.csv"
+PROFILES_CSV = Path(__file__).resolve().parent.parent / "datasets" / "customer_profiles.csv"
 DST_DB = Path(__file__).resolve().parent.parent / "data" / "ecommerce_churn.db"
 
 REFERENCE_DATE = date(2025, 3, 1)
-
-PH_CITIES = [
-    "Manila", "Quezon City", "Makati", "Cebu City", "Davao City",
-    "Pasig", "Taguig", "Antipolo", "Caloocan", "Las Piñas",
-    "Mandaluyong", "Marikina", "Muntinlupa", "Parañaque", "San Juan",
-    "Valenzuela", "Pasay", "Malabon", "Navotas", "Bacoor",
-    "Iloilo City", "Cagayan de Oro", "Zamboanga City", "Bacolod",
-]
-
-FIRST_NAMES = [
-    "Juan", "Maria", "Jose", "Ana", "Pedro", "Rosa", "Carlos", "Elena",
-    "Miguel", "Sofia", "Rafael", "Isabel", "Antonio", "Luz", "Francisco",
-    "Carmen", "Luis", "Teresa", "Ramon", "Gloria", "Manuel", "Nena",
-    "Ricardo", "Fe", "Eduardo", "Corazon", "Roberto", "Lourdes",
-    "Andres", "Cristina", "Marco", "Patricia", "Gabriel", "Josephine",
-    "Daniel", "Angelica", "Paolo", "Jasmine", "Kenneth", "Nicole",
-    "Mark", "Trisha", "John", "Kimberly", "James", "Rhea", "Kevin",
-    "Czarina", "Adrian", "Bianca",
-]
-
-LAST_NAMES = [
-    "Santos", "Reyes", "Cruz", "Bautista", "Del Rosario", "Gonzales",
-    "Ramos", "Aquino", "Garcia", "Mendoza", "Torres", "Villanueva",
-    "Dela Cruz", "Rivera", "Fernandez", "Lopez", "Martinez", "Flores",
-    "Castillo", "Soriano", "Tan", "Lim", "Sy", "Chua", "Go",
-    "Ong", "Co", "Yu", "Ang", "Tiu", "Hernandez", "Pascual",
-    "Aguilar", "Domingo", "Salvador", "Navarro", "Santiago", "De Leon",
-    "Dizon", "Mercado",
-]
 
 STATUS_CHOICES = ["Delivered", "Shipped", "Cancelled", "Unavailable", "Invoiced", "Processing", "Created"]
 STATUS_WEIGHTS = [0.970, 0.011, 0.006, 0.006, 0.003, 0.003, 0.001]
@@ -93,23 +64,20 @@ def impute_nulls(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_customers(df: pd.DataFrame) -> pd.DataFrame:
+def build_customers(df: pd.DataFrame, profiles: pd.DataFrame) -> pd.DataFrame:
     print("  Building customers...")
 
-    city_rng = random.Random(42)
     records = []
 
     for idx, row in df.iterrows():
         cid = generate_customer_id(idx)
-        r = random.Random(_seed_from_id(cid))
-        name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
-        city = city_rng.choice(PH_CITIES)
+        profile = profiles.iloc[idx]
         signup_date = REFERENCE_DATE - timedelta(days=int(row["Tenure"]) * 30)
 
         records.append({
             "customer_id": cid,
-            "name": name,
-            "city": city,
+            "name": profile["name"],
+            "city": profile["city"],
             "signup_date": signup_date.isoformat(),
             "tenure_months": int(row["Tenure"]),
             "warehouse_to_home": int(row["WarehouseToHome"]),
@@ -218,15 +186,19 @@ def synthesize_orders(customers: pd.DataFrame) -> pd.DataFrame:
 
 
 def main():
-    print(f"Source: {KAGGLE_CSV}")
-    print(f"Dest:   {DST_DB}")
+    print(f"Source:   {KAGGLE_CSV}")
+    print(f"Profiles: {PROFILES_CSV}")
+    print(f"Dest:     {DST_DB}")
 
     df = pd.read_csv(KAGGLE_CSV)
     print(f"  Loaded {len(df)} rows from Kaggle CSV")
 
+    profiles = pd.read_csv(PROFILES_CSV)
+    print(f"  Loaded {len(profiles)} rows from customer profiles CSV")
+
     df = impute_nulls(df)
 
-    customers = build_customers(df)
+    customers = build_customers(df, profiles)
     orders = synthesize_orders(customers)
 
     DST_DB.parent.mkdir(parents=True, exist_ok=True)

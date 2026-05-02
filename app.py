@@ -18,7 +18,13 @@ st.set_page_config(
 @st.cache_resource
 def load_model():
     artifact = joblib.load("models/churn_model.pkl")
-    return artifact["model"], artifact["feature_columns"], artifact["impute_medians"]
+    return (
+        artifact["model"],
+        artifact["feature_columns"],
+        artifact["impute_medians"],
+        artifact.get("scaler"),
+        artifact.get("model_name", "Unknown"),
+    )
 
 
 @st.cache_resource
@@ -145,8 +151,11 @@ Be concise and specific. 4-5 sentences max."""
 st.title("📊 Customer Churn Predictor")
 st.markdown("AI-powered churn risk assessment — by customer or by city.")
 
-model, feature_columns, impute_medians = load_model()
+model, feature_columns, impute_medians, scaler, model_name = load_model()
 conn = get_db()
+
+st.sidebar.markdown(f"**Active Model:** {model_name}")
+st.sidebar.markdown(f"**Scaling:** {'Yes' if scaler is not None else 'No'}")
 
 tab1, tab2 = st.tabs(["Customer Lookup", "City Analytics"])
 
@@ -168,6 +177,12 @@ with tab1:
         row = profile.iloc[0]
 
         features = build_feature_vector(row, feature_columns)
+        if scaler is not None:
+            features = pd.DataFrame(
+                scaler.transform(features),
+                columns=features.columns,
+                index=features.index,
+            )
         risk_score = model.predict_proba(features)[0][1]
 
         st.subheader(row["name"])
