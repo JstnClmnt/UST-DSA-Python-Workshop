@@ -33,3 +33,8 @@
 Source: [Kaggle — E-Commerce Customer Churn](https://www.kaggle.com/datasets/samuelsemaya/e-commerce-customer-churn)
 
 # Slide #5
+
+
+# What Claude did not catch during this AI-assisted coding session:
+- Shapley Values, Claude used Permutation Feature Importance, can't even make Shap library work I intervened and did it for like ~3minutes and it worked.
+- Did not visualize Complaint and Marital Status.
