@@ -62,6 +62,7 @@ The repository is **safe to publish on GitHub**. All customer data is synthetic,
 - Three models compared (Random Forest, MLP, SVM) with `GridSearchCV` and F2 scoring
 - SHAP explanations generated for all three models
 - Model artifact saved as a dict containing model, scaler, feature columns, impute medians, and model name
+- **Known issue:** Imputation medians and one-hot encoding are computed on the full dataset before `train_test_split`, which leaks test-set statistics into training. The correct approach is to fit on `X_train` only (e.g., via a scikit-learn `Pipeline`). Impact is small given the dataset size, but reported metrics are slightly optimistic. Deferred for pedagogical simplicity in a 90-minute workshop.
 
 ### `scripts/build_churn_db.py`
 - Deterministic order synthesis via seeded RNG per customer ID
@@ -87,3 +88,13 @@ The repository is **safe to publish on GitHub**. All customer data is synthetic,
 ### Nice to have
 5. Add a `.gitignore` exception for `datasets/data_ecommerce_customer_churn.csv` to make the tracking intentional rather than implicit
 6. Consider Git LFS for binary files if the repository grows beyond its current ~46 MB
+
+---
+
+## Acknowledged Risks (accepted for workshop scope)
+
+### `joblib.load()` pickle trust boundary
+`joblib.load()` at `app.py:20` can execute arbitrary code embedded in a malicious pickle. In this repo the model artifact is committed and not user-uploaded, so the risk is limited to a compromised PR or supply-chain attack on the `.pkl` file. For a public workshop repo, this is an acceptable tradeoff — switching to a safer format like `skops` would add complexity without pedagogical benefit.
+
+### Preprocessing data leakage
+The notebook computes imputation medians and one-hot encoding on the full dataset before `train_test_split` (cells 10-11). This means test-set statistics influence the trained model, making reported metrics slightly optimistic. The correct approach is to fit transformers on `X_train` only via a scikit-learn `Pipeline`. Fixing this requires restructuring the notebook and retraining the model — deferred because the impact is small and the simpler code is easier to teach in 90 minutes.

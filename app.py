@@ -29,7 +29,9 @@ def load_model():
 
 @st.cache_resource
 def get_db():
-    return sqlite3.connect("data/ecommerce_churn.db", check_same_thread=False)
+    return sqlite3.connect(
+        "file:data/ecommerce_churn.db?mode=ro", uri=True, check_same_thread=False
+    )
 
 
 def get_customer_ids(conn):
@@ -232,21 +234,22 @@ with tab1:
 
         st.divider()
         st.subheader("🤖 AI Recommendation")
-        with st.spinner("Generating recommendation..."):
-            customer_data = {
-                "tenure_months": int(row["tenure_months"]),
-                "satisfaction_score": int(row["satisfaction_score"]),
-                "preferred_category": row["preferred_category"],
-                "marital_status": row["marital_status"],
-                "days_since_last_order": int(row["days_since_last_order"]),
-                "cashback_amount": float(row["cashback_amount"]),
-                "complain": int(row["complain"]),
-                "num_devices": int(row["num_devices"]),
-                "num_addresses": int(row["num_addresses"]),
-                "warehouse_to_home": int(row["warehouse_to_home"]),
-            }
-            explanation = explain_churn_risk(customer_data, risk_score)
-        st.info(explanation)
+        if st.button("Generate AI Recommendation", key="recommend"):
+            with st.spinner("Generating recommendation..."):
+                customer_data = {
+                    "tenure_months": int(row["tenure_months"]),
+                    "satisfaction_score": int(row["satisfaction_score"]),
+                    "preferred_category": row["preferred_category"],
+                    "marital_status": row["marital_status"],
+                    "days_since_last_order": int(row["days_since_last_order"]),
+                    "cashback_amount": float(row["cashback_amount"]),
+                    "complain": int(row["complain"]),
+                    "num_devices": int(row["num_devices"]),
+                    "num_addresses": int(row["num_addresses"]),
+                    "warehouse_to_home": int(row["warehouse_to_home"]),
+                }
+                explanation = explain_churn_risk(customer_data, risk_score)
+            st.info(explanation)
 
 with tab2:
     metrics_df = get_city_metrics(conn)
