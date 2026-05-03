@@ -45,10 +45,7 @@ UST-DSA-Python-Workshop/
 |-- datasets/
 |   |-- customer_profiles.csv     # Synthetic Filipino names and cities
 |   `-- data_ecommerce_customer_churn.csv
-|-- docs/
-|   |-- app-architecture.md       # Mermaid app architecture diagram
-|   |-- Customer Churn Prediction-2026-05-03-173204.png
-|   `-- other design/review docs
+|-- docs/                         # Design and review docs
 |-- requirements.txt
 |-- .env.example
 |-- HANDOFF.md
@@ -63,7 +60,7 @@ UST-DSA-Python-Workshop/
 |---|---------|----------|-------------|
 | 1 | Hook | 10 min | Switch to `main`, run the finished app: `streamlit run app.py` |
 | 2 | Notebook | 10 min | Walk through the ML pipeline in Jupyter |
-| 3 | Diagram | 5 min | Show `docs/app-architecture.md` and the PNG architecture diagram |
+| 3 | Architecture | 5 min | Sketch how notebook concepts map to a production app |
 | 4 | Live Coding | 20 min | On this branch, generate `app.py` using AI-assisted coding |
 | 5 | Live Run | 8 min | Run the generated app: `streamlit run app.py` |
 | 6 | Wrap-up | 10 min | Q&A, GitHub link, takeaways |
@@ -101,7 +98,7 @@ Convert this into a Streamlit app (app.py) that:
 Keep the code clean and beginner-readable.
 ```
 
-The AI-assisted coding tool can read the notebook, database schema, `docs/app-architecture.md`, and `HANDOFF.md` to understand the full context, then generate a working `app.py`.
+The AI-assisted coding tool can read the notebook, database schema, and `HANDOFF.md` to understand the full context, then generate a working `app.py`.
 
 ## After the Workshop
 
