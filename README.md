@@ -21,7 +21,7 @@ This branch has the **notebook and pre-trained model** but **no `app.py`**. Duri
 - [ ] Python 3.12+ installed
 - [ ] [uv](https://docs.astral.sh/uv/) installed
 - [ ] [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) installed (`npm install -g @anthropic-ai/claude-code`)
-- [ ] An [Anthropic API key](https://console.anthropic.com/)
+- [ ] An [Anthropic API key](https://console.anthropic.com/) or Claude Subscription
 - [ ] Git installed
 
 ## Setup
