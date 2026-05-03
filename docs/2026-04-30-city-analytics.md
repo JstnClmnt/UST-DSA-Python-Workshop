@@ -19,7 +19,7 @@ The current Streamlit app (`app.py`) only supports **individual customer-level**
 
 ## 4 City Metrics
 
-1. **Churn rate** — % of customers with `days_since_last_order > 90`
+1. **Churn rate** — % of customers with `churn = 1` (from Kaggle ground-truth label)
 2. **Total revenue** — `SUM(total_amount)` grouped by city
 3. **Average order value** — `AVG(total_amount)` grouped by city
 4. **Cancellation rate** — % of orders with `status = 'Cancelled'`
@@ -56,20 +56,15 @@ ORDER BY c.city
 
 **File:** `app.py` — insert after `get_city_metrics`
 
-SQL (requires subquery for per-customer churn status):
+SQL (uses Kaggle ground-truth `churn` column directly):
 ```sql
 SELECT
-    c.city,
+    city,
     COUNT(*) AS total_customers,
-    SUM(CASE WHEN o.days_since_last_order > 90 THEN 1 ELSE 0 END) AS churned_customers,
-    ROUND(SUM(CASE WHEN o.days_since_last_order > 90 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS churn_rate
-FROM customers c
-JOIN (
-    SELECT customer_id, MIN(days_since_last_order) AS days_since_last_order
-    FROM orders
-    GROUP BY customer_id
-) o ON c.customer_id = o.customer_id
-GROUP BY c.city
+    SUM(churn) AS churned_customers,
+    ROUND(SUM(churn) * 100.0 / COUNT(*), 1) AS churn_rate
+FROM customers
+GROUP BY city
 ORDER BY churn_rate DESC
 ```
 
@@ -104,6 +99,25 @@ Row 4: Two columns
 ---
 Row 5: "Generate City Insights" button -> Claude API call -> st.info()
 ```
+
+## Claude Code Live Demo Prompt (Segment 4)
+
+On the `workshop` branch (no `app.py`), use this prompt to kick off Claude Code in plan mode:
+
+```
+I have a Jupyter notebook that trains three ML models (Random Forest, MLP, SVM) for
+churn prediction and saves the best one. Convert it into a Streamlit app that lets me
+look up customers, see their churn risk score, and get AI recommendations using Claude.
+The app should handle the model artifact format (which may include a scaler) and show
+which model won in the sidebar.
+```
+
+**Expected flow:**
+1. Claude Code reads the notebook and database to understand the schema, model artifact format, and scaler
+2. It enters plan mode and proposes an implementation plan
+3. Presenter reviews and approves the plan
+4. Claude Code generates `app.py`
+5. Run `streamlit run app.py` live
 
 ## Verification
 

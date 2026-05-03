@@ -47,78 +47,110 @@ Real Data → Notebook (prototype) → Diagram (mental model) → Claude Code (g
 
 ## 4. Dataset
 
-**Source:** Brazilian E-Commerce Public Dataset by Olist  
-**Kaggle link:** https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce  
-**SQLite version:** https://www.kaggle.com/datasets/terencicp/e-commerce-dataset-by-olist-as-an-sqlite-database  
-**Size:** ~100k real orders, 2016–2018  
-**License:** Public / CC BY-NC-SA 4.0
+**Source:** E-Commerce Customer Churn Dataset  
+**Kaggle link:** https://www.kaggle.com/datasets/samuelsemaya/e-commerce-customer-churn  
+**Size:** 3,941 customers with 10 features and a binary churn label (~17% churn rate)  
+**License:** Public
 
-**Why Olist:** Real commercial data with authentic noise, outliers, and churn signals. 
-Not synthetic — students are told this explicitly during the workshop.
+**Why this dataset:** Pre-labeled churn column independent of features — no data leakage. 
+Small enough to train quickly, large enough to be realistic.
 
-### Localization (PH Adaptation)
-The dataset is Brazilian. Before the workshop, run a preprocessing/remapping script to adapt it:
+### Database Schema
 
-- **Cities:** Remap Brazilian cities → Philippine cities (Manila, Quezon City, Makati, Cebu, Davao, Pasig, Taguig, etc.)
-- **Currency:** Convert BRL → PHP (multiply by ~9.5)
-- **Categories:** Use the included `product_category_name_translation.csv` for English names
-- **Output:** Save the adapted data back into a SQLite `.db` file
-
-### Final Database Schema (after adaptation)
-Use a simplified 3-table schema for the workshop:
+The raw Kaggle CSV is transformed by `scripts/build_churn_db.py` into a SQLite database 
+at `data/ecommerce_churn.db` with 2 tables:
 
 ```sql
 customers (
-    customer_id     TEXT PRIMARY KEY,
-    name            TEXT,
-    city            TEXT,       -- PH cities
-    signup_date     DATE
+    customer_id             TEXT PRIMARY KEY,
+    name                    TEXT,           -- synthetic PH names
+    city                    TEXT,           -- PH cities (Manila, Cebu, Davao, etc.)
+    signup_date             DATE,
+    tenure_months           INT,
+    warehouse_to_home       INT,
+    num_devices             INT,
+    preferred_category      TEXT,           -- Laptop, Mobile, Fashion, Grocery, Others
+    satisfaction_score      INT,            -- 1-5
+    marital_status          TEXT,           -- Single, Married, Divorced
+    num_addresses           INT,
+    complain                INT,            -- 0 or 1
+    days_since_last_order   INT,
+    cashback_amount         REAL,
+    churn                   INT             -- 0 = active, 1 = churned
 )
 
 orders (
-    order_id                TEXT PRIMARY KEY,
-    customer_id             TEXT,
-    order_date              TIMESTAMP,
-    total_amount            DECIMAL,    -- in PHP
-    status                  TEXT,       -- Delivered, Cancelled, Shipped, etc.
-    days_since_last_order   INT         -- pre-computed
-)
-
-products (
-    product_id      TEXT PRIMARY KEY,
-    name            TEXT,
-    category        TEXT,
-    price           DECIMAL     -- in PHP
+    order_id        TEXT PRIMARY KEY,
+    customer_id     TEXT,
+    order_date      TIMESTAMP,
+    total_amount    REAL,           -- in PHP
+    status          TEXT,           -- Delivered, Shipped, Cancelled, etc.
+    payment_type    TEXT,           -- Credit Card, Boleto, Voucher, Debit
+    review_score    INT             -- 1-5, nullable
 )
 ```
 
-> Note: `days_since_last_order` is pre-computed during preprocessing so no 
-> feature engineering is needed live during the workshop.
+> Note: Customer names and cities are synthetic (generated from hashed IDs). 
+> Orders are synthesized to match customer profiles.
 
 ---
 
 ## 5. ML Use Case
 
 **Task:** Customer Churn Prediction (binary classification)  
-**Definition of churn:** Customer has not placed an order in the last 90 days  
-**Target column:** `is_churned` (1 = churned, 0 = active)
+**Target column:** `churn` (1 = churned, 0 = active)  
+**Churn rate:** ~17%
 
-### Features
+### Features (10 raw → 15 after one-hot encoding)
 ```python
-features = [
-    'days_since_last_order',
-    'total_orders',
-    'avg_order_value',      # in PHP
-    'cancellation_rate',    # proportion of cancelled orders
+numeric_features = [
+    'Tenure',                       # tenure_months
+    'WarehouseToHome',              # warehouse_to_home
+    'NumberOfDeviceRegistered',     # num_devices
+    'SatisfactionScore',            # satisfaction_score
+    'NumberOfAddress',              # num_addresses
+    'Complain',                     # complain
+    'DaySinceLastOrder',            # days_since_last_order
+    'CashbackAmount',              # cashback_amount
 ]
-target = 'is_churned'
+categorical_features = [
+    'PreferedOrderCat',            # preferred_category (one-hot, drop_first)
+    'MaritalStatus',               # marital_status (one-hot, drop_first)
+]
+target = 'Churn'
 ```
 
-### Model
-- Use `RandomForestClassifier` or `LogisticRegression` (fast to train, easy to explain)
-- Train/test split: 80/20
-- Save with `joblib.dump(model, 'churn_model.pkl')`
-- **Model is pre-trained before the workshop.** Training code is shown in the notebook but the `.pkl` file is already saved. The script loads the pre-trained model — it does not retrain.
+### Null Imputation
+Three columns have nulls, imputed with median before training:
+- Tenure: median 9.0 months
+- WarehouseToHome: median 14 km
+- DaySinceLastOrder: median 3 days
+
+### Models
+The notebook trains and compares three models using `GridSearchCV` with 5-fold CV and F2 scoring:
+
+| Model | CV F2 | Test F2 | Test Accuracy | Test Recall |
+|-------|-------|---------|---------------|-------------|
+| **Random Forest** (winner) | 0.72 | 0.74 | 93.5% | 70% |
+| SVM | 0.65 | 0.69 | 91.4% | 64% |
+| MLP | 0.59 | 0.63 | 87.7% | 46% |
+
+**F2 scoring rationale:** Recall is weighted 4x more than precision — missing a churner is costlier than a false alarm.
+
+### Model Artifact
+Saved at `models/churn_model.pkl` as a joblib dict:
+```python
+{
+    "model": best_model,               # RandomForestClassifier
+    "feature_columns": [...],           # 15 encoded feature names
+    "impute_medians": {...},            # null imputation values
+    "scaler": None,                     # RF doesn't need scaling
+    "model_name": "Random Forest",
+}
+```
+
+**Model is pre-trained before the workshop.** Training code is shown in the notebook 
+but the `.pkl` file is already saved. The app loads the pre-trained model — it does not retrain.
 
 ---
 
@@ -131,7 +163,7 @@ target = 'is_churned'
 | ML | scikit-learn | Pre-trained, loaded via joblib |
 | Frontend | Streamlit | Main UI |
 | AI layer | Anthropic Python SDK | Direct API call — NOT LangChain |
-| AI model | `claude-sonnet-4-20250514` | Sonnet 4.6 |
+| AI model | `claude-sonnet-4-6` | Sonnet 4.6 |
 | Dev assistant | Claude Code | Used live on stage to generate the script |
 
 ### Anthropic API Usage
@@ -146,16 +178,18 @@ def explain_churn_risk(customer_data: dict, risk_score: float) -> str:
     prompt = f"""
     A customer has a {risk_score:.0%} churn risk score.
     Their profile:
-    - Days since last order: {customer_data['days_since_last_order']}
-    - Total orders: {customer_data['total_orders']}
-    - Avg order value: ₱{customer_data['avg_order_value']:,.2f}
-    - Cancellation rate: {customer_data['cancellation_rate']:.0%}
+    - Tenure: {customer_data['tenure_months']} months
+    - Satisfaction Score: {customer_data['satisfaction_score']}/5
+    - Preferred Category: {customer_data['preferred_category']}
+    - Days Since Last Order: {customer_data['days_since_last_order']}
+    - Cashback Amount: ₱{customer_data['cashback_amount']:,.2f}
+    - Filed Complaint: {'Yes' if customer_data['complain'] else 'No'}
 
     Write a brief, actionable recommendation for the business owner.
     Be concise and specific. 2-3 sentences max.
     """
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -168,8 +202,8 @@ def explain_churn_risk(customer_data: dict, risk_score: float) -> str:
 
 | Branch | Contains | Purpose |
 |---|---|---|
-| `main` | Everything (notebook + script + model) | Full working reference, shown in Hook |
-| `workshop` | Notebook + model only, NO script | Used during Claude Code live demo |
+| `main` | Everything (notebook + app + model) | Full working reference, shown in Hook |
+| `workshop` | Same as main, minus `app.py` | Used during Claude Code live demo |
 
 During the workshop:
 1. Open `main` → run the finished app for the Hook
@@ -186,16 +220,18 @@ showing how the notebook maps to the production script:
 ```
 NOTEBOOK                              SCRIPT (app.py)
 ──────────────────────                ─────────────────────────
-① Load SQLite DB       ──────────►   utils.py / inline db load
-② Feature Engineering  ──────────►   precomputed in .db file
-③ Train & Save Model   ──────────►   churn_model.pkl (pre-loaded)
-④ Evaluate Model       ──────────►   (offline, not in app)
+① Load SQLite DB       ──────────►   inline db load (sqlite3)
+② EDA & Preprocessing  ──────────►   (offline, not in app)
+③ Train & Compare      ──────────►   churn_model.pkl (pre-loaded)
+④ SHAP Explanations    ──────────►   (offline, not in app)
                                       app.py
                                         ├── load model (joblib)
                                         ├── connect to SQLite
                                         ├── customer lookup UI
+                                        ├── build feature vector
                                         ├── run prediction
-                                        └── Claude API → explanation
+                                        ├── Claude API → explanation
+                                        └── city analytics tab
 ```
 
 This diagram is shown at Segment 3 (the 5-min bridge before Claude Code).
@@ -208,15 +244,15 @@ This diagram is shown at Segment 3 (the 5-min bridge before Claude Code).
 workshop-repo/
 │
 ├── data/
-│   └── ecommerce_ph.db          # Adapted Olist SQLite DB
+│   └── ecommerce_churn.db      # Kaggle churn SQLite DB
 │
 ├── notebooks/
-│   └── 01_churn_model.ipynb     # Full notebook: load → features → train → save
+│   └── 01_churn_model.ipynb    # Full notebook: load → EDA → 3 models → SHAP → save
 │
 ├── models/
-│   └── churn_model.pkl          # Pre-trained model
+│   └── churn_model.pkl         # Pre-trained Random Forest model
 │
-├── app.py                       # Streamlit app (generated by Claude Code live)
+├── app.py                      # Streamlit app (generated by Claude Code live)
 ├── requirements.txt
 └── README.md
 ```
@@ -229,22 +265,26 @@ When on the `workshop` branch (no `app.py`), use this prompt for Claude Code:
 
 ```
 I have a Jupyter notebook that:
-1. Loads a SQLite database (ecommerce_ph.db) with 3 tables: customers, orders, products
-2. Computes churn features: days_since_last_order, total_orders, avg_order_value, cancellation_rate
-3. Trains a RandomForestClassifier to predict customer churn (is_churned)
-4. Saves the model to models/churn_model.pkl
+1. Loads a SQLite database (ecommerce_churn.db) with 2 tables: customers and orders
+2. Trains 3 models (Random Forest, MLP, SVM) with GridSearchCV and F2 scoring
+   to predict customer churn using 10 features (tenure, satisfaction, complaints,
+   cashback, preferred category, marital status, etc.)
+3. Selects the best model (Random Forest) and saves it to models/churn_model.pkl
+   as a dict with model, feature_columns, impute_medians, scaler, and model_name
 
 Convert this into a Streamlit app (app.py) that:
-- Lets the user look up a customer by ID
+- Lets the user look up a customer by name from a dropdown
 - Loads the pre-trained model from models/churn_model.pkl
-- Shows the customer's churn risk score as a percentage
-- Calls the Anthropic API (claude-sonnet-4-20250514) to generate a plain-English 
-  explanation and recommendation based on the prediction
-- Displays everything cleanly in the Streamlit UI
+- Shows the customer's churn risk score as a percentage with a color-coded badge
+- Displays customer metrics (tenure, satisfaction, cashback, complaint status, etc.)
+- Shows the customer's order history in an expandable section
+- Calls the Anthropic API (claude-sonnet-4-6) to generate a plain-English
+  explanation and recommendation based on the prediction and customer profile
+- Adds a second tab for city-level analytics (churn rates, revenue, satisfaction)
 - Uses pd.read_sql() to query the SQLite DB (not read_csv)
 - Uses the anthropic Python SDK directly (not LangChain)
 
-Keep the code clean, well-commented, and beginner-readable.
+Keep the code clean and beginner-readable.
 ```
 
 ---
@@ -254,9 +294,11 @@ Keep the code clean, well-commented, and beginner-readable.
 | Decision | Choice | Why |
 |---|---|---|
 | LangChain vs Anthropic SDK | Direct SDK | Fewer abstractions to explain, more transferable skill |
-| Synthetic vs real data | Real (Olist) | Authentic ML patterns, "100k real orders" lands better |
+| Data source | Kaggle customer churn (3,941 rows, pre-labeled) | Fixes leakage problem; proper churn label independent of features |
 | CSV vs SQLite | SQLite | Teaches `pd.read_sql()`, mirrors production patterns |
 | Train live vs pre-trained | Pre-trained | Saves 10-15 mins, training code still shown in notebook |
+| Scoring metric | F2 (recall 4x precision) | Churn miss is costlier than false alarm |
+| Model architecture | 3 models with GridSearchCV | Demonstrates model selection; SHAP interpretability |
 | Dedicated AI section vs woven in | Claude Code IS the AI section | More authentic than a separate slide-based demo |
 
 ---
@@ -268,4 +310,3 @@ Keep the code clean, well-commented, and beginner-readable.
 - Do not retrain the model inside the Streamlit app
 - Do not over-engineer — this is a workshop demo, keep it readable
 - Do not add authentication, multi-user support, or caching complexity
-- Do not add `order_items` table — schema is intentionally simplified to 3 tables

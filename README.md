@@ -1,20 +1,10 @@
 # UST DSA Python Workshop — Live Demo Branch
 
-> This is the **workshop branch** — a stripped-down version of the repo for the live Claude Code demo. Looking for the complete app? Switch to [`main`](../../tree/main).
+> This is the **workshop branch** — it has everything from `main` except `app.py`. Looking for the complete app? Switch to [`main`](../../tree/main).
 
 ## What's Different Here
 
-This branch has the **notebook and pre-trained model** but **no `app.py`**. During the workshop, [Claude Code](https://claude.com/claude-code) generates the Streamlit app live on stage.
-
-| | `main` branch | `workshop` branch |
-|---|---|---|
-| Dataset | Kaggle churn (3,941 customers) | Olist PH-localized (~96K customers) |
-| Database | `ecommerce_churn.db` (3 MB) | `ecommerce_ph.db` (31 MB) |
-| Schema | 2 tables (customers, orders) | 3 tables (customers, orders, products) |
-| ML features | 10 features + one-hot encoding | 4 derived features |
-| Models | RF + MLP + SVM with GridSearchCV | Random Forest only |
-| `app.py` | Included (285 lines, 2 tabs) | **Not included** — generated live |
-| SHAP | Yes | No |
+This branch has the **same dataset, notebook, and pre-trained model** as `main` but **no `app.py`**. During the workshop, [Claude Code](https://claude.com/claude-code) generates the Streamlit app live on stage.
 
 ## Prerequisites
 
@@ -45,21 +35,25 @@ cp .env.example .env
 ```
 UST-DSA-Python-Workshop/
 ├── data/
-│   └── ecommerce_ph.db          # PH-localized Olist SQLite DB
-│       ├── customers (96,096)    #   customer_id, name, city, signup_date
-│       ├── orders (99,441)       #   order_id, customer_id, order_date, total_amount, status, days_since_last_order
-│       └── products (32,951)     #   product_id, name, category, price
+│   └── ecommerce_churn.db        # SQLite DB (3,941 customers + 13,998 orders)
 ├── models/
 │   └── churn_model.pkl           # Pre-trained Random Forest model
 ├── notebooks/
-│   └── 01_churn_model.ipynb      # ML pipeline: load → EDA → features → train → save
+│   └── 01_churn_model.ipynb      # Full ML pipeline (EDA → 3 models → SHAP)
 ├── scripts/
-│   └── build_ph_db.py            # How the database was built (reference only)
+│   ├── build_churn_db.py         # Builds ecommerce_churn.db from Kaggle CSV
+│   └── build_ph_db.py           # Legacy: builds Olist-based DB
+├── datasets/
+│   ├── customer_profiles.csv     # Synthetic Filipino names and cities
+│   └── data_ecommerce_customer_churn.csv  # Kaggle source CSV
+├── docs/                         # Design specs and research
 ├── requirements.txt
 ├── .env.example
 ├── HANDOFF.md                    # Full context doc — Claude Code reads this
 └── README.md
 ```
+
+**Missing:** `app.py` — this is what Claude Code generates during the live demo.
 
 ## Workshop Flow (90 minutes)
 
@@ -78,29 +72,33 @@ With no `app.py` on this branch, we prompt Claude Code to generate it:
 
 ```
 I have a Jupyter notebook that:
-1. Loads a SQLite database (ecommerce_ph.db) with 3 tables: customers, orders, products
-2. Computes churn features: days_since_last_order, total_orders, avg_order_value, cancellation_rate
-3. Trains a RandomForestClassifier to predict customer churn (is_churned)
-4. Saves the model to models/churn_model.pkl
+1. Loads a SQLite database (ecommerce_churn.db) with 2 tables: customers and orders
+2. Trains 3 models (Random Forest, MLP, SVM) with GridSearchCV and F2 scoring
+   to predict customer churn using 10 features (tenure, satisfaction, complaints,
+   cashback, preferred category, marital status, etc.)
+3. Selects the best model (Random Forest) and saves it to models/churn_model.pkl
+   as a dict with model, feature_columns, impute_medians, scaler, and model_name
 
 Convert this into a Streamlit app (app.py) that:
-- Lets the user look up a customer by ID
+- Lets the user look up a customer by name from a dropdown
 - Loads the pre-trained model from models/churn_model.pkl
-- Shows the customer's churn risk score as a percentage
+- Shows the customer's churn risk score as a percentage with a color-coded badge
+- Displays customer metrics (tenure, satisfaction, cashback, complaint status, etc.)
+- Shows the customer's order history in an expandable section
 - Calls the Anthropic API (claude-sonnet-4-6) to generate a plain-English
-  explanation and recommendation based on the prediction
-- Displays everything cleanly in the Streamlit UI
+  explanation and recommendation based on the prediction and customer profile
+- Adds a second tab for city-level analytics (churn rates, revenue, satisfaction)
 - Uses pd.read_sql() to query the SQLite DB (not read_csv)
 - Uses the anthropic Python SDK directly (not LangChain)
 
-Keep the code clean, well-commented, and beginner-readable.
+Keep the code clean and beginner-readable.
 ```
 
 Claude Code reads the notebook, database schema, and `HANDOFF.md` to understand the full context, then generates a working `app.py`.
 
 ## After the Workshop
 
-To see the complete reference implementation with multi-model comparison, SHAP explanations, and the finished 2-tab Streamlit app:
+To see the complete reference implementation with the finished 2-tab Streamlit app:
 
 ```bash
 git checkout main
@@ -109,6 +107,6 @@ streamlit run app.py
 
 ## Acknowledgments
 
-- **Dataset:** [Brazilian E-Commerce by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) (Kaggle, CC BY-NC-SA 4.0)
+- **Dataset:** [E-Commerce Customer Churn](https://www.kaggle.com/datasets/samuelsemaya/e-commerce-customer-churn) by Samuel Semaya (Kaggle)
 - **Workshop:** Python Workshop for BS Data Science & Analytics, University of Santo Tomas, Manila
 - **Built with:** [Claude Code](https://claude.com/claude-code) and [Streamlit](https://streamlit.io/)
