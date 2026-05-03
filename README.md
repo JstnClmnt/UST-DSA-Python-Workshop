@@ -113,4 +113,4 @@ The [`workshop`](../../tree/workshop) branch is a stripped-down version used for
 
 - **Dataset:** [E-Commerce Customer Churn](https://www.kaggle.com/datasets/samuelsemaya/e-commerce-customer-churn) by Samuel Semaya (Kaggle)
 - **Workshop:** Python Workshop for BS Data Science & Analytics, University of Santo Tomas, Manila
-- **Built with:** [Claude Code](https://claude.com/claude-code) and [Streamlit](https://streamlit.io/)
+- **Built with:** [Streamlit](https://streamlit.io/)
