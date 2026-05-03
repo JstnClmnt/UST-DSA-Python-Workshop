@@ -23,7 +23,6 @@ Predicts which e-commerce customers are likely to churn using a [Kaggle dataset]
 | Data | SQLite, pandas |
 | App | Streamlit |
 | AI | Anthropic Claude API (`claude-sonnet-4-6`) |
-| Dev Tool | [Claude Code](https://claude.com/claude-code) |
 
 ## Dataset
 
@@ -61,7 +60,7 @@ UST-DSA-Python-Workshop/
 ├── docs/                       # Design specs and research
 ├── requirements.txt
 ├── .env.example
-├── HANDOFF.md                  # Workshop context for Claude Code
+├── HANDOFF.md                  # Workshop context document
 ├── IMPLEMENTATION.md           # Build roadmap
 └── SLIDES.md                   # Slide outline
 ```
@@ -107,7 +106,7 @@ The pre-trained model is already included. The notebook can be run end-to-end to
 
 ## Workshop Branch
 
-The [`workshop`](../../tree/workshop) branch is a stripped-down version used for a live Claude Code demo during the workshop. It has the notebook and pre-trained model but **no `app.py`** — the app is generated live on stage using Claude Code. See the [workshop branch README](../../tree/workshop#readme) for details.
+The [`workshop`](../../tree/workshop) branch is a stripped-down version used for a live coding demo during the workshop. It has the notebook and pre-trained model but **no `app.py`** — the app is built live on stage. See the [workshop branch README](../../tree/workshop#readme) for details.
 
 ## Acknowledgments
 
