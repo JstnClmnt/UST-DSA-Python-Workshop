@@ -265,12 +265,17 @@ When on the `workshop` branch (no `app.py`), use this prompt for Claude Code:
 
 ```
 I have a Jupyter notebook that:
-1. Loads a SQLite database (ecommerce_churn.db) with 2 tables: customers and orders
+1. Loads a Kaggle CSV (datasets/data_ecommerce_customer_churn.csv) with 3,941
+   customers and 10 features like tenure, satisfaction, complaints, cashback,
+   preferred category, marital status, etc.
 2. Trains 3 models (Random Forest, MLP, SVM) with GridSearchCV and F2 scoring
-   to predict customer churn using 10 features (tenure, satisfaction, complaints,
-   cashback, preferred category, marital status, etc.)
+   to predict customer churn
 3. Selects the best model (Random Forest) and saves it to models/churn_model.pkl
    as a dict with model, feature_columns, impute_medians, scaler, and model_name
+
+I also have a SQLite database (data/ecommerce_churn.db) with 2 tables — customers
+and orders — built by scripts/build_churn_db.py from the same CSV plus synthetic
+Filipino names and cities.
 
 Convert this into a Streamlit app (app.py) that:
 - Lets the user look up a customer by name from a dropdown
