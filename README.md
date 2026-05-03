@@ -4,13 +4,12 @@
 
 ## What's Different Here
 
-This branch has the **same dataset, notebook, and pre-trained model** as `main` but **no `app.py`**. During the workshop, [Claude Code](https://claude.com/claude-code) generates the Streamlit app live on stage.
+This branch has the **same dataset, notebook, and pre-trained model** as `main` but **no `app.py`**. During the workshop, the Streamlit app is built live on stage using AI-assisted coding.
 
 ## Prerequisites
 
 - [ ] Python 3.12+ installed
 - [ ] [uv](https://docs.astral.sh/uv/) installed
-- [ ] [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) installed (`npm install -g @anthropic-ai/claude-code`)
 - [ ] An [Anthropic API key](https://console.anthropic.com/) or Claude Subscription
 - [ ] Git installed
 
@@ -49,11 +48,11 @@ UST-DSA-Python-Workshop/
 ├── docs/                         # Design specs and research
 ├── requirements.txt
 ├── .env.example
-├── HANDOFF.md                    # Full context doc — Claude Code reads this
+├── HANDOFF.md                    # Full context document
 └── README.md
 ```
 
-**Missing:** `app.py` — this is what Claude Code generates during the live demo.
+**Missing:** `app.py` — this is built during the live demo.
 
 ## Workshop Flow (90 minutes)
 
@@ -62,13 +61,13 @@ UST-DSA-Python-Workshop/
 | 1 | Hook | 10 min | Switch to `main`, run the finished app: `streamlit run app.py` |
 | 2 | Notebook | 10 min | Walk through the ML pipeline in Jupyter |
 | 3 | Diagram | 5 min | How notebook concepts map to a production app |
-| 4 | Claude Code | 20 min | On this branch, prompt Claude Code to generate `app.py` |
+| 4 | Live Coding | 20 min | On this branch, generate `app.py` using AI-assisted coding |
 | 5 | Live Run | 8 min | Run the generated app: `streamlit run app.py` |
 | 6 | Wrap-up | 10 min | Q&A, GitHub link, takeaways |
 
-## The Claude Code Demo
+## The Live Coding Demo
 
-With no `app.py` on this branch, we prompt Claude Code to generate it:
+With no `app.py` on this branch, we use the following prompt to generate it:
 
 ```
 I have a Jupyter notebook that:
@@ -99,7 +98,7 @@ Convert this into a Streamlit app (app.py) that:
 Keep the code clean and beginner-readable.
 ```
 
-Claude Code reads the notebook, database schema, and `HANDOFF.md` to understand the full context, then generates a working `app.py`.
+The AI reads the notebook, database schema, and `HANDOFF.md` to understand the full context, then generates a working `app.py`.
 
 ## After the Workshop
 
@@ -114,4 +113,4 @@ streamlit run app.py
 
 - **Dataset:** [E-Commerce Customer Churn](https://www.kaggle.com/datasets/samuelsemaya/e-commerce-customer-churn) by Samuel Semaya (Kaggle)
 - **Workshop:** Python Workshop for BS Data Science & Analytics, University of Santo Tomas, Manila
-- **Built with:** [Claude Code](https://claude.com/claude-code) and [Streamlit](https://streamlit.io/)
+- **Built with:** [Streamlit](https://streamlit.io/) and [Anthropic Claude API](https://docs.anthropic.com/)
