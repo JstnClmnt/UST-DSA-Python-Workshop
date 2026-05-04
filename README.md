@@ -96,6 +96,7 @@ Convert this into a Streamlit app (app.py) that:
 - Uses the anthropic Python SDK directly (not LangChain)
 
 Keep the code clean and beginner-readable.
+Do not read from the main branch, only work with whatever you have within the `workshop branch.`
 ```
 
 The AI-assisted coding tool can read the notebook, database schema, and `HANDOFF.md` to understand the full context, then generate a working `app.py`.
